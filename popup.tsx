@@ -51,16 +51,22 @@ function IndexPopup() {
           notebook.map((item: any, idx) => (
             <div key={idx} style={{
               background: "white",
-              padding: "12px",
-              borderRadius: "12px",
-              boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
-              border: "1px solid rgba(0,0,0,0.02)"
+              padding: "16px",
+              borderRadius: "16px",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.03)",
+              border: "1px solid rgba(0,0,0,0.05)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px"
             }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-                <span style={{ fontWeight: 700, color: "#1e293b" }}>{item.text}</span>
-                <span style={{ color: "#db2777", fontSize: "12px", fontWeight: 500 }}>{item.ipa}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontWeight: 800, color: "#1e293b", fontSize: "18px" }}>{item.text}</span>
+                <span style={{ color: "#7c3aed", fontSize: "12px", fontWeight: 600, background: "#f5f3ff", padding: "2px 8px", borderRadius: "6px" }}>{item.ipa}</span>
               </div>
-              <p style={{ margin: 0, fontSize: "12px", color: "#64748b", lineHeight: "1.4" }}>
+              <div style={{ fontSize: "14px", fontWeight: 700, color: "#4f46e5" }}>
+                🇻🇳 {item.vietnamese}
+              </div>
+              <p style={{ margin: 0, fontSize: "12px", color: "#64748b", lineHeight: "1.5", borderLeft: "2px solid #e2e8f0", paddingLeft: "8px" }}>
                 {item.definition}
               </p>
             </div>
