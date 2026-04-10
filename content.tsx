@@ -20,19 +20,14 @@ const IPASpyOverlay = () => {
     const currentData = dataRef.current
     if (currentData.audio) {
       const audio = new Audio(currentData.audio)
-      audio.play().catch(() => playSpeechSynthesis(selectedText))
+      audio.play().catch(() => requestBackgroundTTS(selectedText))
     } else {
-      playSpeechSynthesis(selectedText)
+      requestBackgroundTTS(selectedText)
     }
   }, [selectedText])
 
-  const playSpeechSynthesis = (text: string) => {
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = "en-GB"
-    utterance.rate = 0.95
-    utterance.pitch = 1
-    window.speechSynthesis.speak(utterance)
+  const requestBackgroundTTS = (text: string) => {
+    chrome.runtime.sendMessage({ action: "speak", text, lang: "en-GB" })
   }
 
   const handleMouseUp = useCallback(async () => {
@@ -65,12 +60,22 @@ const IPASpyOverlay = () => {
         } else {
           const entry = dictJson[0]
           const firstMeaning = entry.meanings?.[0]
+          
+          // Tìm link audio, ưu tiên giọng UK (-uk.mp3)
+          let audioUrl = ""
+          const phoneticsWithAudio = entry.phonetics?.filter((p: any) => p.audio) || []
+          const ukAudio = phoneticsWithAudio.find((p: any) => p.audio.includes("-uk.mp3"))
+          audioUrl = ukAudio?.audio || phoneticsWithAudio[0]?.audio || ""
+          
+          // Fix URL nếu thiếu https:
+          if (audioUrl.startsWith("//")) audioUrl = `https:${audioUrl}`
+
           setData({
             ipa: entry.phonetic || entry.phonetics?.find((p: any) => p.text)?.text || "/?/",
             definition: firstMeaning?.definitions?.[0]?.definition || "No definition.",
             vietnamese: viMeaning,
             example: firstMeaning?.definitions?.find((d: any) => d.example)?.example || "",
-            audio: entry.phonetics?.find((p: any) => p.audio !== "")?.audio || ""
+            audio: audioUrl
           })
         }
       } catch (error) {
@@ -85,7 +90,9 @@ const IPASpyOverlay = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Chặn scroll khi bôi đen và nhấn phím
       if (isVisible && e.key.toLowerCase() === "s") {
+        e.preventDefault()
         playUKAudio()
       }
     }
