@@ -17,31 +17,9 @@ const IPASpyOverlay = () => {
   useEffect(() => { dataRef.current = data }, [data])
 
   const playUKAudio = useCallback(() => {
-    const currentData = dataRef.current
-    if (currentData.audio) {
-      const audio = new Audio(currentData.audio)
-      audio.play().catch(() => requestBackgroundTTS(selectedText))
-    } else {
-      requestBackgroundTTS(selectedText)
-    }
-  }, [selectedText])
-
-  const requestBackgroundTTS = (text: string) => {
-    // Ưu tiên dùng Browser Speech API trực tiếp với giọng UK nếu tìm thấy
-    const voices = window.speechSynthesis.getVoices()
-    const ukVoice = voices.find(v => v.lang === "en-GB" || v.lang.startsWith("en-GB"))
-    
-    if (ukVoice) {
-      const utterance = new SpeechSynthesisUtterance(text)
-      utterance.voice = ukVoice
-      utterance.lang = "en-GB"
-      utterance.rate = 0.9
-      window.speechSynthesis.speak(utterance)
-    } else {
-      // Nếu không, gửi tới background tts
-      chrome.runtime.sendMessage({ action: "speak", text, lang: "en-GB" })
-    }
-  }
+    // Luôn ưu tiên dùng background để phát TTS cho ổn định
+    chrome.runtime.sendMessage({ action: "speak", text: selectedText, audioUrl: data.audio })
+  }, [selectedText, data.audio])
 
   const handleMouseUp = useCallback(async () => {
     const selection = window.getSelection()
@@ -61,45 +39,21 @@ const IPASpyOverlay = () => {
       
       setLoading(true)
       try {
-        const dictRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${text}`)
-        const dictJson = await dictRes.json()
-        
-        const transRes = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=vi&dt=t&q=${text}`)
-        const transJson = await transRes.json()
-        const viMeaning = transJson?.[0]?.[0]?.[0] || "N/A"
-
-        if (dictJson.title === "No Definitions Found" || !Array.isArray(dictJson)) {
-          setData({ ipa: "N/A", definition: "Not found.", vietnamese: viMeaning, example: "", audio: "" })
-        } else {
-          const entry = dictJson[0]
-          const firstMeaning = entry.meanings?.[0]
-          
-          let audioUrl = ""
-          const phoneticsWithAudio = entry.phonetics?.filter((p: any) => p.audio) || []
-          const ukAudio = phoneticsWithAudio.find((p: any) => p.audio.includes("-uk.mp3"))
-          audioUrl = ukAudio?.audio || phoneticsWithAudio[0]?.audio || ""
-          if (audioUrl.startsWith("//")) audioUrl = `https:${audioUrl}`
-
-          const newData = {
-            ipa: entry.phonetic || entry.phonetics?.find((p: any) => p.text)?.text || "/?/",
-            definition: firstMeaning?.definitions?.[0]?.definition || "No definition.",
-            vietnamese: viMeaning,
-            example: firstMeaning?.definitions?.find((d: any) => d.example)?.example || "",
-            audio: audioUrl
+        // Gửi yêu cầu lấy dữ liệu tới background
+        chrome.runtime.sendMessage({ action: "fetchData", text }, (response) => {
+          if (response && response.success) {
+            setData(response.data)
+            // Kiểm tra luôn trạng thái đã lưu
+            chrome.runtime.sendMessage({ action: "checkSaved", text }, (checkRes) => {
+              if (checkRes?.isSaved) setIsSaved(true)
+            })
+          } else {
+            setData({ ipa: "Error", definition: "Could not fetch data.", vietnamese: "Lỗi kết nối.", example: "", audio: "" })
           }
-          setData(newData)
-
-          // Kiểm tra xem từ này đã được lưu chưa
-          chrome.storage.local.get(["ipaSpyNotebook"], (result) => {
-            const notebook = result.ipaSpyNotebook || []
-            if (notebook.find((item: any) => item.text === text)) {
-              setIsSaved(true)
-            }
-          })
-        }
+          setLoading(false)
+        })
       } catch (error) {
-        setData({ ipa: "Error", definition: "Connection error.", vietnamese: "Lỗi kết nối.", example: "", audio: "" })
-      } finally {
+        setData({ ipa: "Error", definition: "Service worker error.", vietnamese: "Lỗi hệ thống.", example: "", audio: "" })
         setLoading(false)
       }
     } else if (isVisible) {
@@ -116,8 +70,6 @@ const IPASpyOverlay = () => {
     }
     document.addEventListener("mouseup", handleMouseUp)
     document.addEventListener("keydown", handleKeyDown)
-    // Tải trước voices cho speechSynthesis
-    window.speechSynthesis.getVoices()
     return () => {
       document.removeEventListener("mouseup", handleMouseUp)
       document.removeEventListener("keydown", handleKeyDown)
@@ -129,16 +81,12 @@ const IPASpyOverlay = () => {
     const currentData = dataRef.current
     const wordData = { text: selectedText, ...currentData, timestamp: Date.now() }
     
-    chrome.storage.local.get(["ipaSpyNotebook"], (result) => {
-      const notebook = result.ipaSpyNotebook || []
-      // Check for duplicates
-      if (!notebook.find((item: any) => item.text === selectedText)) {
-        chrome.storage.local.set({ ipaSpyNotebook: [wordData, ...notebook] }, () => {
-          setIsSaved(true)
-        })
-      } else {
+    setLoading(true) // Show subtle feedback
+    chrome.runtime.sendMessage({ action: "saveWord", wordData }, (response) => {
+      if (response?.success) {
         setIsSaved(true)
       }
+      setLoading(false)
     })
   }
 
