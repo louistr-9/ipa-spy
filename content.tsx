@@ -27,7 +27,20 @@ const IPASpyOverlay = () => {
   }, [selectedText])
 
   const requestBackgroundTTS = (text: string) => {
-    chrome.runtime.sendMessage({ action: "speak", text, lang: "en-GB" })
+    // Ưu tiên dùng Browser Speech API trực tiếp với giọng UK nếu tìm thấy
+    const voices = window.speechSynthesis.getVoices()
+    const ukVoice = voices.find(v => v.lang === "en-GB" || v.lang.startsWith("en-GB"))
+    
+    if (ukVoice) {
+      const utterance = new SpeechSynthesisUtterance(text)
+      utterance.voice = ukVoice
+      utterance.lang = "en-GB"
+      utterance.rate = 0.9
+      window.speechSynthesis.speak(utterance)
+    } else {
+      // Nếu không, gửi tới background tts
+      chrome.runtime.sendMessage({ action: "speak", text, lang: "en-GB" })
+    }
   }
 
   const handleMouseUp = useCallback(async () => {
@@ -61,21 +74,27 @@ const IPASpyOverlay = () => {
           const entry = dictJson[0]
           const firstMeaning = entry.meanings?.[0]
           
-          // Tìm link audio, ưu tiên giọng UK (-uk.mp3)
           let audioUrl = ""
           const phoneticsWithAudio = entry.phonetics?.filter((p: any) => p.audio) || []
           const ukAudio = phoneticsWithAudio.find((p: any) => p.audio.includes("-uk.mp3"))
           audioUrl = ukAudio?.audio || phoneticsWithAudio[0]?.audio || ""
-          
-          // Fix URL nếu thiếu https:
           if (audioUrl.startsWith("//")) audioUrl = `https:${audioUrl}`
 
-          setData({
+          const newData = {
             ipa: entry.phonetic || entry.phonetics?.find((p: any) => p.text)?.text || "/?/",
             definition: firstMeaning?.definitions?.[0]?.definition || "No definition.",
             vietnamese: viMeaning,
             example: firstMeaning?.definitions?.find((d: any) => d.example)?.example || "",
             audio: audioUrl
+          }
+          setData(newData)
+
+          // Kiểm tra xem từ này đã được lưu chưa
+          chrome.storage.local.get(["ipaSpyNotebook"], (result) => {
+            const notebook = result.ipaSpyNotebook || []
+            if (notebook.find((item: any) => item.text === text)) {
+              setIsSaved(true)
+            }
           })
         }
       } catch (error) {
@@ -90,7 +109,6 @@ const IPASpyOverlay = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Chặn scroll khi bôi đen và nhấn phím
       if (isVisible && e.key.toLowerCase() === "s") {
         e.preventDefault()
         playUKAudio()
@@ -98,6 +116,8 @@ const IPASpyOverlay = () => {
     }
     document.addEventListener("mouseup", handleMouseUp)
     document.addEventListener("keydown", handleKeyDown)
+    // Tải trước voices cho speechSynthesis
+    window.speechSynthesis.getVoices()
     return () => {
       document.removeEventListener("mouseup", handleMouseUp)
       document.removeEventListener("keydown", handleKeyDown)
@@ -106,12 +126,19 @@ const IPASpyOverlay = () => {
 
   const saveWord = () => {
     if (!selectedText) return
-    const wordData = { text: selectedText, ...data, timestamp: Date.now() }
+    const currentData = dataRef.current
+    const wordData = { text: selectedText, ...currentData, timestamp: Date.now() }
+    
     chrome.storage.local.get(["ipaSpyNotebook"], (result) => {
       const notebook = result.ipaSpyNotebook || []
-      chrome.storage.local.set({ ipaSpyNotebook: [wordData, ...notebook] }, () => {
+      // Check for duplicates
+      if (!notebook.find((item: any) => item.text === selectedText)) {
+        chrome.storage.local.set({ ipaSpyNotebook: [wordData, ...notebook] }, () => {
+          setIsSaved(true)
+        })
+      } else {
         setIsSaved(true)
-      })
+      }
     })
   }
 
@@ -157,7 +184,6 @@ const IPASpyOverlay = () => {
         color: "#0f172a",
         position: "relative"
       }}>
-        {/* Minimal Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
           <div style={{ flex: 1 }}>
             <h1 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#0f172a", letterSpacing: "-0.025em" }}>
@@ -180,7 +206,6 @@ const IPASpyOverlay = () => {
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {/* Meta & Audio Section */}
             <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
               <div style={{ background: "#f8fafc", padding: "8px 12px", borderRadius: "8px", color: "#475569", fontWeight: 600, fontSize: "14px", fontFamily: "monospace", flex: 1 }}>
                 {data.ipa}
@@ -197,18 +222,16 @@ const IPASpyOverlay = () => {
               </button>
               <button 
                 onClick={saveWord}
-                style={{ background: isSaved ? "#0f172a" : "#0f172a", color: "white", border: "none", padding: "8px 16px", borderRadius: "8px", fontSize: "12px", cursor: "pointer", fontWeight: 700, display: "flex", alignItems: "center" }}
+                style={{ background: isSaved ? "#22c55e" : "#0f172a", color: "white", border: "none", padding: "8px 16px", borderRadius: "8px", fontSize: "12px", cursor: "pointer", fontWeight: 700, display: "flex", alignItems: "center", transition: "all 0.2s" }}
               >
-                {isSaved ? "Saved" : "Save"}
+                {isSaved ? "✓ Saved" : "Save"}
               </button>
             </div>
             
-            {/* Definition */}
             <div style={{ fontSize: "13px", color: "#475569", lineHeight: "1.6", borderLeft: "2px solid #e2e8f0", paddingLeft: "12px" }}>
               {data.definition}
             </div>
 
-            {/* Subtle Example */}
             {data.example && (
               <div style={{ fontSize: "12px", color: "#64748b", fontStyle: "italic", background: "#f8fafc", padding: "12px", borderRadius: "10px" }}>
                 "{data.example}"
@@ -222,6 +245,7 @@ const IPASpyOverlay = () => {
 }
 
 export default IPASpyOverlay
+
 
 
 
