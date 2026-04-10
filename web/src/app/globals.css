@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+@theme {
+  /* Sharp Professional Fonts */
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-poppins);
+
+  /* Primary Transition */
+  --color-primary: var(--primary);
+  --color-primary-dark: var(--primary-dark);
+  --color-primary-light: var(--primary-light);
+
+  --color-glass: rgba(255, 255, 255, 0.7);
+  --color-glass-dark: rgba(15, 23, 42, 0.7);
+}
+
+:root {
+  /* Default Theme: Sky */
+  --primary: #009dff;
+  --primary-dark: #007acc;
+  --primary-light: #e6f4ff;
+
+  --background: #ffffff;
+  --foreground: #3c3c3c;
+}
+
+/* Specific Theme Overrides */
+[data-theme='sky'] {
+  --primary: #009dff;
+  --primary-dark: #007acc;
+  --primary-light: #e6f4ff;
+}
+
+[data-theme='ebony'] {
+  --primary: #1e293b;
+  --primary-dark: #0f172a;
+  --primary-light: #f1f5f9;
+}
+
+[data-theme='rose'] {
+  --primary: #ff4d94;
+  --primary-dark: #d6337a;
+  --primary-light: #fff0f6;
+}
+
+[data-theme='gold'] {
+  --primary: #c59235;
+  --primary-dark: #9a712a;
+  --primary-light: #fcf4e8;
+}
+
+[data-theme='monochrome'] {
+  --primary: #111111;
+  --primary-dark: #000000;
+  --primary-light: #f8f8f8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #131f24;
+    --foreground: #ffffff;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-inter), system-ui, sans-serif;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-poppins), sans-serif;
+  letter-spacing: -0.01em;
+}
+
+@layer base {
+  * {
+    @apply border-slate-200 dark:border-slate-800;
+  }
+}
+
+.glass-card {
+  @apply backdrop-blur-md bg-white/70 dark:bg-slate-900/70 border-b-4 border-slate-200 dark:border-slate-800 shadow-xl;
+  /* DuoCards style handles shadows and 'lifted' bottom borders */
+}
+
+.gradient-bg {
+  background: radial-gradient(circle at top right, var(--primary-light), transparent),
+    radial-gradient(circle at bottom left, rgba(168, 85, 247, 0.05), transparent);
+}
+
+/* DuoCards Button Style Utility */
+.btn-duo {
+  @apply px-6 py-3 rounded-2xl font-black uppercase tracking-wider transition-all active:translate-y-1 active:border-b-0 border-b-4 select-none;
+}

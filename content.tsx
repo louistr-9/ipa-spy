@@ -22,12 +22,42 @@ const IPASpyOverlay = () => {
     chrome.runtime.sendMessage({ action: "speak", text: selectedText, audioUrl: data.audio })
   }, [selectedText, data.audio])
 
+  const getContextSentence = (selection: Selection) => {
+    try {
+      const range = selection.getRangeAt(0)
+      const container = range.commonAncestorContainer
+      const text = container.textContent || ""
+      const fullText = container.parentElement?.innerText || text
+      
+      const selectedWord = selection.toString().trim()
+      const startIndex = fullText.indexOf(selectedWord)
+      
+      if (startIndex === -1) return ""
+
+      let start = startIndex
+      while (start > 0 && !/[.!?\n]/.test(fullText[start - 1])) {
+        start--
+      }
+
+      let end = startIndex + selectedWord.length
+      while (end < fullText.length && !/[.!?\n]/.test(fullText[end])) {
+        end++
+      }
+
+      const sentence = fullText.substring(start, end).trim()
+      return sentence.length < 300 ? sentence : sentence.substring(0, 300) + "..."
+    } catch (e) {
+      return ""
+    }
+  }
+
   const handleMouseUp = useCallback(async () => {
     const selection = window.getSelection()
     const text = selection?.toString().trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "") || ""
 
-    if (text.length > 0 && text.length < 50 && /^[a-zA-Z\s]+$/.test(text)) {
-      const range = selection!.getRangeAt(0)
+    if (text.length > 0 && text.length < 50 && /^[a-zA-Z\s]+$/.test(text) && selection) {
+      const context = getContextSentence(selection)
+      const range = selection.getRangeAt(0)
       const rect = range.getBoundingClientRect()
 
       setSelectedText(text)
@@ -42,12 +72,12 @@ const IPASpyOverlay = () => {
       try {
         chrome.runtime.sendMessage({ action: "fetchData", text }, (response) => {
           if (response && response.success) {
-            setData(response.data)
+            setData({ ...response.data, context_sentence: context })
             chrome.runtime.sendMessage({ action: "checkSaved", text }, (checkRes) => {
               if (checkRes?.isSaved) setIsSaved(true)
             })
           } else {
-            setData({ ipa: "N/A", definition: "Could not fetch details.", vietnamese: "Không tìm thấy kết quả.", example: "", audio: "" })
+            setData({ ipa: "N/A", definition: "Could not fetch details.", vietnamese: "Không tìm thấy kết quả.", example: "", audio: "", context_sentence: context })
           }
           setFetching(false)
         })
@@ -209,4 +239,4 @@ export default IPASpyOverlay
 
 
 
-
+

@@ -27,7 +27,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "getUser") {
-    supabase.auth.getUser().then(({ data }) => sendResponse(data.user))
+    supabase.auth.getUser()
+      .then(({ data }) => sendResponse(data.user || null))
+      .catch(err => {
+        console.error("Background getUser error:", err)
+        sendResponse(null)
+      })
     return true
   }
 
@@ -50,15 +55,15 @@ async function handleFetchData(text: string) {
     const viMeaning = transJson?.[0]?.[0]?.[0] || "N/A"
 
     if (dictJson.title === "No Definitions Found" || !Array.isArray(dictJson)) {
-      return { 
-        success: true, 
-        data: { ipa: "N/A", definition: "Not found.", vietnamese: viMeaning, example: "", audio: "" } 
+      return {
+        success: true,
+        data: { ipa: "N/A", definition: "Not found.", vietnamese: viMeaning, example: "", audio: "" }
       }
     }
 
     const entry = dictJson[0]
     const firstMeaning = entry.meanings?.[0]
-    
+
     // Tìm audio
     let audioUrl = ""
     const phoneticsWithAudio = entry.phonetics?.filter((p: any) => p.audio) || []
@@ -73,7 +78,8 @@ async function handleFetchData(text: string) {
         definition: firstMeaning?.definitions?.[0]?.definition || "No definition.",
         vietnamese: viMeaning,
         example: firstMeaning?.definitions?.find((d: any) => d.example)?.example || "",
-        audio: audioUrl
+        audio: audioUrl,
+        part_of_speech: firstMeaning?.partOfSpeech || "n/a"
       }
     }
   } catch (error) {
@@ -85,12 +91,12 @@ async function handleFetchData(text: string) {
 // --- Logic xử lý Phát âm ---
 function handleSpeak(text: string, audioUrl?: string) {
   chrome.tts.stop()
-  
+
   // Lấy danh sách voice để tìm giọng UK tốt nhất
   chrome.tts.getVoices((voices) => {
     const ukVoice = voices.find(v => v.lang.includes("en-GB"))
     const anyEnVoice = voices.find(v => v.lang.startsWith("en"))
-    
+
     chrome.tts.speak(text, {
       lang: "en-GB",
       voiceName: ukVoice?.voiceName || anyEnVoice?.voiceName,
@@ -103,46 +109,76 @@ function handleSpeak(text: string, audioUrl?: string) {
 // --- Logic xử lý Google OAuth ---
 async function handleGoogleLogin() {
   try {
-    const redirectUrl = chrome.identity.getRedirectURL()
+    // 1. Lấy Redirect URL và làm sạch dấu / ở cuối nếu có
+    let redirectUrl = chrome.identity.getRedirectURL()
+    if (redirectUrl.endsWith("/")) {
+      redirectUrl = redirectUrl.slice(0, -1)
+    }
+    console.log("Cleaned Redirect URL:", redirectUrl)
+
+    // 2. Yêu cầu Supabase tạo URL đăng nhập
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo: redirectUrl,
-        skipBrowserRedirect: true
+        skipBrowserRedirect: true,
+        queryParams: {
+          prompt: "select_account" // Ép hiện bảng chọn tài khoản để dễ test
+        }
       }
     })
-    
+
     if (error) throw error
-    
+    if (!data?.url) throw new Error("Supabase không trả về URL xác thực.")
+
+    console.log("App launching auth flow...")
+
+    // 3. Mở cửa sổ xác thực của Chrome
     const responseUrl = await new Promise<string>((resolve, reject) => {
       chrome.identity.launchWebAuthFlow({
         url: data.url,
         interactive: true
       }, (url) => {
-        if (chrome.runtime.lastError || !url) {
-          reject(chrome.runtime.lastError?.message || "Login failed")
+        if (chrome.runtime.lastError) {
+          console.error("Identity Flow Error:", chrome.runtime.lastError.message)
+          reject(new Error("Lỗi hệ thống Chrome: " + chrome.runtime.lastError.message))
+        } else if (!url) {
+          reject(new Error("Đã hủy đăng nhập hoặc không nhận được phản hồi."))
         } else {
           resolve(url)
         }
       })
     })
 
+    console.log("Auth flow completed, parsing response...")
     const url = new URL(responseUrl)
-    const params = new URLSearchParams(url.hash.substring(1))
-    const access_token = params.get("access_token")
-    const refresh_token = params.get("refresh_token")
 
-    if (!access_token || !refresh_token) throw new Error("No tokens found")
+    // Hỗ trợ cả PKCE (code) và Implicit (token)
+    const hashParams = new URLSearchParams(url.hash.substring(1))
+    const searchParams = new URLSearchParams(url.search)
 
-    const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-      access_token,
-      refresh_token
-    })
+    const access_token = hashParams.get("access_token") || searchParams.get("access_token")
+    const refresh_token = hashParams.get("refresh_token") || searchParams.get("refresh_token")
+    const code = searchParams.get("code")
 
-    if (sessionError) throw sessionError
-    return { success: true, user: sessionData.user }
+    if (access_token) {
+      const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+        access_token,
+        refresh_token: refresh_token || ""
+      })
+      if (sessionError) throw sessionError
+      return { success: true, user: sessionData.user }
+    } else if (code) {
+      // Hỗ trợ nếu Supabase dùng PKCE
+      const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code)
+      if (sessionError) throw sessionError
+      return { success: true, user: sessionData.user }
+    } else {
+      throw new Error("Xác thực thành công nhưng không tìm thấy dữ liệu phiên làm việc.")
+    }
+
   } catch (error) {
-    console.error("Auth Error:", error)
+    console.error("ALARM - Auth Error:", error)
     return { success: false, error: error.message }
   }
 }
@@ -151,7 +187,7 @@ async function handleGoogleLogin() {
 async function handleSaveWord(wordData: any) {
   try {
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (user) {
       // 1. Lưu lên Cloud (Supabase)
       const { error } = await supabase
@@ -163,9 +199,14 @@ async function handleSaveWord(wordData: any) {
           definition: wordData.definition,
           vietnamese: wordData.vietnamese,
           example: wordData.example,
-          audio: wordData.audio
+          audio: wordData.audio,
+          context_sentence: wordData.context_sentence,
+          part_of_speech: wordData.part_of_speech,
+          next_review_date: new Date().toISOString(),
+          interval: 0,
+          ease_factor: 2.5
         }, { onConflict: "user_id,text" })
-      
+
       if (error) throw error
       return { success: true, saved: true }
     } else {
@@ -194,7 +235,7 @@ async function handleSaveWord(wordData: any) {
 async function handleCheckSaved(text: string) {
   try {
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (user) {
       const { data, error } = await supabase
         .from("words")
@@ -202,7 +243,7 @@ async function handleCheckSaved(text: string) {
         .eq("user_id", user.id)
         .eq("text", text)
         .single()
-      
+
       return { isSaved: !!data }
     } else {
       return new Promise((resolve) => {
