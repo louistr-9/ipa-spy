@@ -9,6 +9,8 @@ const IPASpyOverlay = () => {
   const [selectedText, setSelectedText] = useState("")
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [isVisible, setIsVisible] = useState(false)
+  const [data, setData] = useState({ ipa: "", definition: "", vietnamese: "", example: "", audio: "" })
+  const [isSaved, setIsSaved] = useState(false)
   const [fetching, setFetching] = useState(false)
   const [saving, setSaving] = useState(false)
   
