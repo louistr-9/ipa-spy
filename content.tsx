@@ -24,18 +24,16 @@ const IPASpyOverlay = () => {
       setSelectedText(text)
       setPosition({
         x: rect.left + rect.width / 2 + window.scrollX,
-        y: rect.top + window.scrollY - 15
+        y: rect.top + window.scrollY - 18 // Đẩy lên thêm 3px để nhường chỗ cho đuôi
       })
       setIsVisible(true)
       setIsSaved(false)
       
       setLoading(true)
       try {
-        // 1. Fetch IPA & English Definition
         const dictRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${text}`)
         const dictJson = await dictRes.json()
         
-        // 2. Fetch Vietnamese Translation
         const transRes = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=vi&dt=t&q=${text}`)
         const transJson = await transRes.json()
         const viMeaning = transJson?.[0]?.[0]?.[0] || "N/A"
@@ -88,87 +86,95 @@ const IPASpyOverlay = () => {
     zIndex: 2147483647,
     pointerEvents: "auto",
     transform: "translate(-50%, -100%)",
-    animation: "ipaSpyAppear 0.25s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards",
+    animation: "ipaSpyAppear 0.3s cubic-bezier(0.23, 1, 0.32, 1) forwards",
   }
 
   return (
     <div style={glassStyle}>
       <style>{`
         @keyframes ipaSpyAppear {
-          from { opacity: 0; transform: translate(-50%, -90%); }
-          to { opacity: 1; transform: translate(-50%, -100%); }
+          from { opacity: 0; transform: translate(-50%, -95%) scale(0.95); }
+          to { opacity: 1; transform: translate(-50%, -100%) scale(1); }
         }
         .ipa-spy-container::after {
           content: "";
           position: absolute;
-          bottom: -8px;
+          bottom: -10px;
           left: 50%;
           transform: translateX(-50%);
-          border-left: 8px solid transparent;
-          border-right: 8px solid transparent;
-          border-top: 8px solid rgba(255, 255, 255, 0.85);
-          filter: drop-shadow(0 4px 4px rgba(0,0,0,0.1));
+          border-left: 10px solid transparent;
+          border-right: 10px solid transparent;
+          border-top: 10px solid rgba(255, 255, 255, 0.95);
+          filter: drop-shadow(0 5px 10px rgba(0,0,0,0.1));
         }
       `}</style>
       
       <div className="ipa-spy-container" style={{
-        backgroundColor: "rgba(255, 255, 255, 0.9)",
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
-        border: "1px solid rgba(255, 255, 255, 0.4)",
-        borderRadius: "18px",
-        boxShadow: "0 15px 35px -5px rgba(0, 0, 0, 0.2), 0 0 20px rgba(99, 102, 241, 0.1)",
-        padding: "16px",
-        width: "280px",
-        fontFamily: "'Inter', system-ui, sans-serif",
+        backgroundColor: "rgba(255, 255, 255, 0.92)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
+        border: "1px solid rgba(255, 255, 255, 0.6)",
+        borderRadius: "22px",
+        boxShadow: `
+          0 10px 40px -10px rgba(0, 0, 0, 0.25), 
+          0 0 20px rgba(99, 102, 241, 0.15),
+          inset 0 0 0 1px rgba(255, 255, 255, 0.5)
+        `,
+        padding: "20px",
+        width: "300px",
+        fontFamily: "'Inter', -apple-system, system-ui, sans-serif",
         color: "#1e293b",
-        position: "relative"
+        position: "relative",
       }}>
-        {/* Header with Word & Vietnamese Meaning */}
-        <div style={{ marginBottom: "10px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
-            <h3 style={{ margin: 0, fontWeight: 900, fontSize: "22px", background: "linear-gradient(90deg, #4f46e5, #9333ea)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-              {selectedText}
-            </h3>
-            <span style={{ fontSize: "10px", fontWeight: 800, background: "#fdf2f8", color: "#db2777", padding: "2px 8px", borderRadius: "8px", border: "1px solid #fce7f3" }}>IPA</span>
-          </div>
-          {!loading && (
-            <div style={{ fontSize: "15px", fontWeight: 700, color: "#4f46e5", display: "flex", alignItems: "center", gap: "6px" }}>
-              <span>🇻🇳</span>
-              {data.vietnamese}
+        {/* Header - Word & VN */}
+        <div style={{ marginBottom: "14px" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "8px" }}>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ margin: 0, fontWeight: 900, fontSize: "24px", letterSpacing: "-0.5px", background: "linear-gradient(135deg, #6366f1, #d946ef)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+                {selectedText}
+              </h3>
+              {!loading && (
+                <div style={{ fontSize: "16px", fontWeight: 700, color: "#4f46e5", marginTop: "2px", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ fontSize: "12px", background: "#f0f2ff", color: "#6366f1", padding: "1px 6px", borderRadius: "6px", border: "1px solid #e0e7ff" }}>VN</span>
+                  {data.vietnamese}
+                </div>
+              )}
             </div>
-          )}
+            <span style={{ fontSize: "10px", fontWeight: 900, background: "linear-gradient(45deg, #ec4899, #f43f5e)", color: "white", padding: "2px 10px", borderRadius: "20px", boxShadow: "0 4px 10px rgba(236,72,153,0.3)", textTransform: "uppercase" }}>IPA</span>
+          </div>
         </div>
 
         {loading ? (
-          <div style={{ height: "60px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ width: "24px", height: "24px", border: "3px solid #e2e8f0", borderTopColor: "#6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <div style={{ height: "80px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "10px" }}>
+            <div style={{ width: "28px", height: "28px", border: "3px solid rgba(99, 102, 241, 0.1)", borderTopColor: "#6366f1", borderRadius: "50%", animation: "spin 0.8s cubic-bezier(0.5, 0, 0.5, 1) infinite" }} />
+            <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 600, letterSpacing: "1px" }}>ANALYZING...</span>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            {/* IPA & Audio */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(99, 102, 241, 0.05)", padding: "6px 10px", borderRadius: "10px" }}>
-              <span style={{ color: "#7c3aed", fontWeight: 600, fontSize: "14px", fontFamily: "monospace" }}>{data.ipa}</span>
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            {/* IPA & Controls */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(99, 102, 241, 0.04)", padding: "10px 14px", borderRadius: "14px", border: "1px solid rgba(99, 102, 241, 0.08)" }}>
+              <span style={{ color: "#7c3aed", fontWeight: 700, fontSize: "15px", fontFamily: "'Fira Code', monospace" }}>{data.ipa}</span>
               <div style={{ display: "flex", gap: "8px" }}>
                 {data.audio && (
-                  <button onClick={() => new Audio(data.audio).play()} style={{ border: "none", background: "white", cursor: "pointer", fontSize: "14px", padding: "4px 8px", borderRadius: "6px", boxShadow: "0 2px 4px rgba(0,0,0,0.05)" }}>🔊</button>
+                  <button onClick={() => new Audio(data.audio).play()} style={{ border: "none", background: "white", cursor: "pointer", fontSize: "16px", padding: "6px", borderRadius: "10px", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", display: "flex", transition: "transform 0.1s" }} onMouseDown={(e) => e.currentTarget.style.transform = "scale(0.9)"} onMouseUp={(e) => e.currentTarget.style.transform = "scale(1)"}>🔊</button>
                 )}
-                <button onClick={saveWord} style={{ border: "none", background: isSaved ? "#22c55e" : "#6366f1", color: "white", padding: "4px 10px", borderRadius: "6px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>
+                <button onClick={saveWord} style={{ border: "none", background: isSaved ? "#22c55e" : "#6366f1", color: "white", padding: "6px 14px", borderRadius: "10px", fontSize: "12px", cursor: "pointer", fontWeight: 800, transition: "all 0.2s", boxShadow: isSaved ? "0 4px 12px rgba(34,197,94,0.3)" : "0 4px 12px rgba(99,102,241,0.3)" }}>
                   {isSaved ? "Saved" : "Save"}
                 </button>
               </div>
             </div>
             
             {/* English Definition */}
-            <p style={{ margin: 0, fontSize: "12px", color: "#475569", lineHeight: "1.5", borderLeft: "3px solid #e2e8f0", paddingLeft: "8px" }}>
-              {data.definition}
-            </p>
+            <div style={{ position: "relative" }}>
+              <p style={{ margin: 0, fontSize: "13px", color: "#475569", lineHeight: "1.6", paddingLeft: "12px", borderLeft: "3px solid #6366f1" }}>
+                {data.definition}
+              </p>
+            </div>
 
             {/* Example Usage */}
             {data.example && (
-              <div style={{ fontSize: "11px", color: "#64748b", fontStyle: "italic", background: "#f8fafc", padding: "6px 10px", borderRadius: "8px" }}>
-                <span style={{ fontWeight: 700, fontStyle: "normal", color: "#94a3b8", fontSize: "9px", textTransform: "uppercase", display: "block", marginBottom: "2px" }}>Example</span>
+              <div style={{ fontSize: "12px", color: "#64748b", fontStyle: "italic", background: "linear-gradient(to right, #f8fafc, #f1f5f9)", padding: "12px", borderRadius: "14px", borderLeft: "1px solid rgba(0,0,0,0.03)" }}>
+                <span style={{ fontWeight: 800, fontStyle: "normal", color: "#94a3b8", fontSize: "9px", textTransform: "uppercase", display: "block", marginBottom: "4px", letterSpacing: "1px" }}>Example</span>
                 "{data.example}"
               </div>
             )}
@@ -180,4 +186,5 @@ const IPASpyOverlay = () => {
 }
 
 export default IPASpyOverlay
+
 
