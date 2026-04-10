@@ -9,15 +9,14 @@ const IPASpyOverlay = () => {
   const [selectedText, setSelectedText] = useState("")
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [isVisible, setIsVisible] = useState(false)
-  const [data, setData] = useState({ ipa: "", definition: "", vietnamese: "", example: "", audio: "" })
-  const [loading, setLoading] = useState(false)
-  const [isSaved, setIsSaved] = useState(false)
+  const [fetching, setFetching] = useState(false)
+  const [saving, setSaving] = useState(false)
   
   const dataRef = useRef(data)
   useEffect(() => { dataRef.current = data }, [data])
 
   const playUKAudio = useCallback(() => {
-    // Luôn ưu tiên dùng background để phát TTS cho ổn định
+    // Ưu tiên dùng MP3 nếu có, không thì dùng TTS qua background
     chrome.runtime.sendMessage({ action: "speak", text: selectedText, audioUrl: data.audio })
   }, [selectedText, data.audio])
 
@@ -25,7 +24,7 @@ const IPASpyOverlay = () => {
     const selection = window.getSelection()
     const text = selection?.toString().trim() || ""
 
-    if (text.length > 0 && text.length < 30 && /^[a-zA-Z]+$/.test(text)) {
+    if (text.length > 0 && text.length < 30 && /^[a-zA-Z\s]+$/.test(text)) {
       const range = selection!.getRangeAt(0)
       const rect = range.getBoundingClientRect()
 
@@ -37,24 +36,21 @@ const IPASpyOverlay = () => {
       setIsVisible(true)
       setIsSaved(false)
       
-      setLoading(true)
+      setFetching(true)
       try {
-        // Gửi yêu cầu lấy dữ liệu tới background
         chrome.runtime.sendMessage({ action: "fetchData", text }, (response) => {
           if (response && response.success) {
             setData(response.data)
-            // Kiểm tra luôn trạng thái đã lưu
             chrome.runtime.sendMessage({ action: "checkSaved", text }, (checkRes) => {
               if (checkRes?.isSaved) setIsSaved(true)
             })
           } else {
-            setData({ ipa: "Error", definition: "Could not fetch data.", vietnamese: "Lỗi kết nối.", example: "", audio: "" })
+            setData({ ipa: "N/A", definition: "Could not fetch details.", vietnamese: "Không tìm thấy kết quả.", example: "", audio: "" })
           }
-          setLoading(false)
+          setFetching(false)
         })
       } catch (error) {
-        setData({ ipa: "Error", definition: "Service worker error.", vietnamese: "Lỗi hệ thống.", example: "", audio: "" })
-        setLoading(false)
+        setFetching(false)
       }
     } else if (isVisible) {
       setIsVisible(false)
@@ -77,16 +73,16 @@ const IPASpyOverlay = () => {
   }, [handleMouseUp, isVisible, playUKAudio])
 
   const saveWord = () => {
-    if (!selectedText) return
+    if (!selectedText || isSaved || saving) return
     const currentData = dataRef.current
     const wordData = { text: selectedText, ...currentData, timestamp: Date.now() }
     
-    setLoading(true) // Show subtle feedback
+    setSaving(true)
     chrome.runtime.sendMessage({ action: "saveWord", wordData }, (response) => {
-      if (response?.success) {
+      if (response && response.success) {
         setIsSaved(true)
       }
-      setLoading(false)
+      setSaving(false)
     })
   }
 
@@ -148,7 +144,7 @@ const IPASpyOverlay = () => {
           </div>
         </div>
 
-        {loading ? (
+        {fetching ? (
           <div style={{ padding: "20px 0", textAlign: "center", color: "#94a3b8", fontSize: "12px", letterSpacing: "0.05em" }}>
             LOADING...
           </div>
@@ -170,9 +166,24 @@ const IPASpyOverlay = () => {
               </button>
               <button 
                 onClick={saveWord}
-                style={{ background: isSaved ? "#22c55e" : "#0f172a", color: "white", border: "none", padding: "8px 16px", borderRadius: "8px", fontSize: "12px", cursor: "pointer", fontWeight: 700, display: "flex", alignItems: "center", transition: "all 0.2s" }}
+                disabled={saving || isSaved}
+                style={{ 
+                  background: isSaved ? "#22c55e" : (saving ? "#94a3b8" : "#0f172a"), 
+                  color: "white", 
+                  border: "none", 
+                  padding: "8px 16px", 
+                  borderRadius: "8px", 
+                  fontSize: "12px", 
+                  cursor: (isSaved || saving) ? "default" : "pointer", 
+                  fontWeight: 700, 
+                  display: "flex", 
+                  alignItems: "center", 
+                  transition: "all 0.2s",
+                  minWidth: "80px",
+                  justifyContent: "center"
+                }}
               >
-                {isSaved ? "✓ Saved" : "Save"}
+                {saving ? "Saving..." : (isSaved ? "✓ Saved" : "Save")}
               </button>
             </div>
             

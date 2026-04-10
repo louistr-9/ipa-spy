@@ -74,41 +74,55 @@ async function handleFetchData(text: string) {
 
 // --- Logic xử lý Phát âm ---
 function handleSpeak(text: string, audioUrl?: string) {
-  // Nếu có audioUrl (MP3), ta không thể dùng chrome.tts trực tiếp cho URL
-  // Nhưng background script có thể "mượn" một trang ẩn hoặc dùng tts dự phòng
-  
   chrome.tts.stop()
-  chrome.tts.speak(text, {
-    lang: "en-GB",
-    rate: 0.9,
-    pitch: 1.0,
-    voiceName: "Google UK English Female" // Thử dùng voice cụ thể nếu có
+  
+  // Lấy danh sách voice để tìm giọng UK tốt nhất
+  chrome.tts.getVoices((voices) => {
+    const ukVoice = voices.find(v => v.lang.includes("en-GB"))
+    const anyEnVoice = voices.find(v => v.lang.startsWith("en"))
+    
+    chrome.tts.speak(text, {
+      lang: "en-GB",
+      voiceName: ukVoice?.voiceName || anyEnVoice?.voiceName,
+      rate: 0.9,
+      pitch: 1.0
+    })
   })
 }
 
 // --- Logic xử lý Lưu trữ ---
 async function handleSaveWord(wordData: any) {
   return new Promise((resolve) => {
-    chrome.storage.local.get(["ipaSpyNotebook"], (result) => {
-      const notebook = result.ipaSpyNotebook || []
-      if (!notebook.find((item: any) => item.text === wordData.text)) {
-        const updated = [wordData, ...notebook]
-        chrome.storage.local.set({ ipaSpyNotebook: updated }, () => {
+    try {
+      chrome.storage.local.get(["ipaSpyNotebook"], (result) => {
+        const notebook = result.ipaSpyNotebook || []
+        const isDuplicate = notebook.some((item: any) => item.text === wordData.text)
+        
+        if (!isDuplicate) {
+          const updated = [wordData, ...notebook]
+          chrome.storage.local.set({ ipaSpyNotebook: updated }, () => {
+            resolve({ success: true, saved: true })
+          })
+        } else {
           resolve({ success: true, saved: true })
-        })
-      } else {
-        resolve({ success: true, saved: true }) // Đã tồn tại
-      }
-    })
+        }
+      })
+    } catch (e) {
+      resolve({ success: false, error: e.message })
+    }
   })
 }
 
 async function handleCheckSaved(text: string) {
   return new Promise((resolve) => {
-    chrome.storage.local.get(["ipaSpyNotebook"], (result) => {
-      const notebook = result.ipaSpyNotebook || []
-      const isSaved = !!notebook.find((item: any) => item.text === text)
-      resolve({ isSaved })
-    })
+    try {
+      chrome.storage.local.get(["ipaSpyNotebook"], (result) => {
+        const notebook = result.ipaSpyNotebook || []
+        const isSaved = notebook.some((item: any) => item.text === text)
+        resolve({ isSaved })
+      })
+    } catch (e) {
+      resolve({ isSaved: false })
+    }
   })
 }
