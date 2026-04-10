@@ -22,9 +22,9 @@ const IPASpyOverlay = () => {
 
   const handleMouseUp = useCallback(async () => {
     const selection = window.getSelection()
-    const text = selection?.toString().trim() || ""
+    const text = selection?.toString().trim().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "") || ""
 
-    if (text.length > 0 && text.length < 30 && /^[a-zA-Z\s]+$/.test(text)) {
+    if (text.length > 0 && text.length < 50 && /^[a-zA-Z\s]+$/.test(text)) {
       const range = selection!.getRangeAt(0)
       const rect = range.getBoundingClientRect()
 
@@ -133,7 +133,7 @@ const IPASpyOverlay = () => {
             <h1 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#0f172a", letterSpacing: "-0.025em" }}>
               {selectedText}
             </h1>
-            {!loading && (
+            {!fetching && (
               <div style={{ marginTop: "4px", fontSize: "14px", fontWeight: 600, color: "#334155" }}>
                 {data.vietnamese}
               </div>
