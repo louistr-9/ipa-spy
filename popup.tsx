@@ -1,16 +1,57 @@
-import { useState, useEffect } from "react"
+import { supabase } from "~core/supabase"
 
 function IndexPopup() {
   const [notebook, setNotebook] = useState([])
+  const [user, setUser] = useState(null)
+  const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
-    // Lấy danh sách từ đã lưu từ storage
-    chrome.storage.local.get(["ipaSpyNotebook"], (result) => {
-      if (result.ipaSpyNotebook) {
-        setNotebook(result.ipaSpyNotebook)
-      }
-    })
+    refreshSession()
   }, [])
+
+  const refreshSession = () => {
+    chrome.runtime.sendMessage({ action: "getUser" }, (res) => {
+      setUser(res)
+      loadNotebook(res)
+    })
+  }
+
+  const loadNotebook = async (currentUser) => {
+    setSyncing(true)
+    if (currentUser) {
+      try {
+        const { data, error } = await supabase
+          .from("words")
+          .select("*")
+          .order("created_at", { ascending: false })
+        
+        if (!error && data) {
+          setNotebook(data)
+          // Cập nhật local làm cache
+          chrome.storage.local.set({ ipaSpyNotebook: data })
+        }
+      } catch (err) {
+        console.error("Fetch error:", err)
+      }
+    } else {
+      chrome.storage.local.get(["ipaSpyNotebook"], (result) => {
+        if (result.ipaSpyNotebook) setNotebook(result.ipaSpyNotebook)
+      })
+    }
+    setSyncing(false)
+  }
+
+  const handleLogin = () => {
+    chrome.runtime.sendMessage({ action: "signInWithGoogle" }, (res) => {
+      if (res?.success) refreshSession()
+    })
+  }
+
+  const handleLogout = () => {
+    chrome.runtime.sendMessage({ action: "signOut" }, () => {
+      refreshSession()
+    })
+  }
 
   const clearNotebook = () => {
     if (confirm("Bạn có chắc chắn muốn xóa toàn bộ từ vựng?")) {
@@ -29,6 +70,29 @@ function IndexPopup() {
       fontFamily: "'Inter', system-ui, sans-serif",
       color: "#0f172a"
     }}>
+      {/* Auth Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", padding: "12px", background: "#f8fafc", borderRadius: "12px" }}>
+        {user ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", width: "100%" }}>
+            <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#0f172a", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "12px" }}>
+              {user.email?.[0].toUpperCase()}
+            </div>
+            <div style={{ flex: 1, overflow: "hidden" }}>
+              <div style={{ fontSize: "12px", fontWeight: 700, color: "#1e293b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.email}</div>
+              <div style={{ fontSize: "10px", color: "#22c55e", fontWeight: 600 }}>Cloud Sync Active</div>
+            </div>
+            <button onClick={handleLogout} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: "10px", fontWeight: 700, cursor: "pointer" }}>Logout</button>
+          </div>
+        ) : (
+          <button 
+            onClick={handleLogin}
+            style={{ width: "100%", background: "#0f172a", color: "white", border: "none", padding: "10px", borderRadius: "8px", fontSize: "13px", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+          >
+            <span style={{ fontSize: "16px" }}>G</span> Sign in with Google
+          </button>
+        )}
+      </div>
+
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px" }}>
         <h2 style={{ margin: 0, fontSize: "22px", fontWeight: 800, color: "#0f172a", letterSpacing: "-0.025em" }}>

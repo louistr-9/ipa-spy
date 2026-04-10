@@ -1,14 +1,9 @@
-export {}
-
-/**
- * IPA Spy Background Service Worker (Proxy Mode)
- * Đóng vai trò là "đầu não" xử lý mọi tác vụ nặng để tránh lỗi CSP/CORS từ trang web.
- */
+import { supabase } from "~core/supabase"
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "fetchData") {
     handleFetchData(message.text).then(sendResponse)
-    return true // Giữ kết nối để gửi response async
+    return true
   }
 
   if (message.action === "speak") {
@@ -23,6 +18,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.action === "checkSaved") {
     handleCheckSaved(message.text).then(sendResponse)
+    return true
+  }
+
+  if (message.action === "signInWithGoogle") {
+    handleGoogleLogin().then(sendResponse)
+    return true
+  }
+
+  if (message.action === "getUser") {
+    supabase.auth.getUser().then(({ data }) => sendResponse(data.user))
+    return true
+  }
+
+  if (message.action === "signOut") {
+    supabase.auth.signOut().then(() => sendResponse({ success: true }))
     return true
   }
 })
@@ -90,39 +100,120 @@ function handleSpeak(text: string, audioUrl?: string) {
   })
 }
 
-// --- Logic xử lý Lưu trữ ---
-async function handleSaveWord(wordData: any) {
-  return new Promise((resolve) => {
-    try {
-      chrome.storage.local.get(["ipaSpyNotebook"], (result) => {
-        const notebook = result.ipaSpyNotebook || []
-        const isDuplicate = notebook.some((item: any) => item.text === wordData.text)
-        
-        if (!isDuplicate) {
-          const updated = [wordData, ...notebook]
-          chrome.storage.local.set({ ipaSpyNotebook: updated }, () => {
-            resolve({ success: true, saved: true })
-          })
+// --- Logic xử lý Google OAuth ---
+async function handleGoogleLogin() {
+  try {
+    const redirectUrl = chrome.identity.getRedirectURL()
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: redirectUrl,
+        skipBrowserRedirect: true
+      }
+    })
+    
+    if (error) throw error
+    
+    const responseUrl = await new Promise<string>((resolve, reject) => {
+      chrome.identity.launchWebAuthFlow({
+        url: data.url,
+        interactive: true
+      }, (url) => {
+        if (chrome.runtime.lastError || !url) {
+          reject(chrome.runtime.lastError?.message || "Login failed")
         } else {
-          resolve({ success: true, saved: true })
+          resolve(url)
         }
       })
-    } catch (e) {
-      resolve({ success: false, error: e.message })
+    })
+
+    const url = new URL(responseUrl)
+    const params = new URLSearchParams(url.hash.substring(1))
+    const access_token = params.get("access_token")
+    const refresh_token = params.get("refresh_token")
+
+    if (!access_token || !refresh_token) throw new Error("No tokens found")
+
+    const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+      access_token,
+      refresh_token
+    })
+
+    if (sessionError) throw sessionError
+    return { success: true, user: sessionData.user }
+  } catch (error) {
+    console.error("Auth Error:", error)
+    return { success: false, error: error.message }
+  }
+}
+
+// --- Logic xử lý Lưu trữ ---
+async function handleSaveWord(wordData: any) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (user) {
+      // 1. Lưu lên Cloud (Supabase)
+      const { error } = await supabase
+        .from("words")
+        .upsert({
+          user_id: user.id,
+          text: wordData.text,
+          ipa: wordData.ipa,
+          definition: wordData.definition,
+          vietnamese: wordData.vietnamese,
+          example: wordData.example,
+          audio: wordData.audio
+        }, { onConflict: "user_id,text" })
+      
+      if (error) throw error
+      return { success: true, saved: true }
+    } else {
+      // 2. Chế độ khách (Lưu Local)
+      return new Promise((resolve) => {
+        chrome.storage.local.get(["ipaSpyNotebook"], (result) => {
+          const notebook = result.ipaSpyNotebook || []
+          const isDuplicate = notebook.some((item: any) => item.text === wordData.text)
+          if (!isDuplicate) {
+            const updated = [wordData, ...notebook]
+            chrome.storage.local.set({ ipaSpyNotebook: updated }, () => {
+              resolve({ success: true, saved: true })
+            })
+          } else {
+            resolve({ success: true, saved: true })
+          }
+        })
+      })
     }
-  })
+  } catch (e) {
+    console.error("Save Error:", e)
+    return { success: false, error: e.message }
+  }
 }
 
 async function handleCheckSaved(text: string) {
-  return new Promise((resolve) => {
-    try {
-      chrome.storage.local.get(["ipaSpyNotebook"], (result) => {
-        const notebook = result.ipaSpyNotebook || []
-        const isSaved = notebook.some((item: any) => item.text === text)
-        resolve({ isSaved })
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (user) {
+      const { data, error } = await supabase
+        .from("words")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("text", text)
+        .single()
+      
+      return { isSaved: !!data }
+    } else {
+      return new Promise((resolve) => {
+        chrome.storage.local.get(["ipaSpyNotebook"], (result) => {
+          const notebook = result.ipaSpyNotebook || []
+          const isSaved = notebook.some((item: any) => item.text === text)
+          resolve({ isSaved })
+        })
       })
-    } catch (e) {
-      resolve({ isSaved: false })
     }
-  })
+  } catch (e) {
+    return { isSaved: false }
+  }
 }
